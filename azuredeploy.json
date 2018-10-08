@@ -1,0 +1,222 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "companyAbbreviation": {
+            "type": "string",
+  		    "defaultValue": "TW",
+  		    "metadata": {
+				"description": "Typically a 2-3 Character Abbreviation to Represent the Target Customer"
+			}
+        },
+		"virtualMachineSize": {
+		  "type": "string",
+		  "defaultValue": "Standard_DS2_v2",
+		  "allowedValues": [
+			"Standard_DS2_v2",
+			"Standard_DS3_v2"
+		  ],
+		  "metadata": {
+			"description": "Virtual Machine Size (use Default unless known)"
+		  }
+		},		
+        "adminUsername": {
+    	    "defaultValue": "j2sp-admin",
+            "type": "string"
+        },
+        "adminPassword": {
+            "type": "secureString"
+        }
+    },
+    "variables": {
+        "nsgId": "[resourceId(resourceGroup().name, 'Microsoft.Network/networkSecurityGroups', concat('vm-',parameters('companyAbbreviation'),'-j2sp-1-nsg'))]",
+        "vnetId": "[resourceId(resourceGroup().name,'Microsoft.Network/virtualNetworks', concat('rg-',parameters('companyAbbreviation'),'-j2sp-vnet'))]",
+        "subnetRef": "[concat(variables('vnetId'), '/subnets/', 'default')]"
+    },
+    "resources": [
+        {
+            "name": "[concat('vm-',parameters('companyAbbreviation'),'-j2sp-1253')]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2018-04-01",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[concat('Microsoft.Network/networkSecurityGroups/','vm-',parameters('companyAbbreviation'),'-j2sp-1-nsg')]",
+                "[concat('Microsoft.Network/virtualNetworks/', 'rg-',parameters('companyAbbreviation'),'-j2sp-vnet')]",
+                "[concat('Microsoft.Network/publicIpAddresses/', 'vm-',parameters('companyAbbreviation'),'-j2sp-1-ip')]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "subnet": {
+                                "id": "[variables('subnetRef')]"
+                            },
+                            "privateIPAllocationMethod": "Dynamic",
+                            "publicIpAddress": {
+                                "id": "[resourceId(resourceGroup().name, 'Microsoft.Network/publicIpAddresses', concat('vm-',parameters('companyAbbreviation'),'-j2sp-1-ip'))]"
+                            }
+                        }
+                    }
+                ],
+                "enableAcceleratedNetworking": true,
+                "networkSecurityGroup": {
+                    "id": "[variables('nsgId')]"
+                }
+            },
+            "tags": {}
+        },
+        {
+            "name": "[concat('vm-',parameters('companyAbbreviation'),'-j2sp-1-nsg')]",
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "apiVersion": "2018-08-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "securityRules": []
+            },
+            "tags": {}
+        },
+        {
+            "name": "[concat('rg-',parameters('companyAbbreviation'),'-j2sp-vnet')]",
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2018-08-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "10.0.0.0/24"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "default",
+                        "properties": {
+                            "addressPrefix": "10.0.0.0/24"
+                        }
+                    }
+                ]
+            },
+            "tags": {}
+        },
+        {
+            "name": "[concat('vm-',parameters('companyAbbreviation'),'-j2sp-1-ip')]",
+            "type": "Microsoft.Network/publicIpAddresses",
+            "apiVersion": "2018-08-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "publicIpAllocationMethod": "Dynamic"
+            },
+            "sku": {
+                "name": "Basic"
+            },
+            "tags": {}
+        },
+        {
+            "name": "[concat('vm-',parameters('companyAbbreviation'),'-j2sp-1')]",
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2018-04-01",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[concat('Microsoft.Network/networkInterfaces/', 'vm-',parameters('companyAbbreviation'),'-j2sp-1253')]",
+                "[concat('Microsoft.Storage/storageAccounts/', 'rg', toLower(parameters('companyAbbreviation')),'j2spdiag')]"
+            ],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "[parameters('virtualMachineSize')]"
+                },
+                "storageProfile": {
+                    "osDisk": {
+                        "createOption": "fromImage",
+                        "managedDisk": {
+                            "storageAccountType": "Premium_LRS"
+                        }
+                    },
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2016-Datacenter",
+                        "version": "latest"
+                    }
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', concat('vm-',parameters('companyAbbreviation'),'-j2sp-1253'))]"
+                        }
+                    ]
+                },
+                "osProfile": {
+                    "computerName": "[concat('vm-',parameters('companyAbbreviation'),'-j2sp-1')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "windowsConfiguration": {
+                        "enableAutomaticUpdates": true,
+                        "provisionVmAgent": true
+                    }
+                },
+                "diagnosticsProfile": {
+                    "bootDiagnostics": {
+                        "enabled": true,
+                        "storageUri": "[concat('https://', 'rg',toLower(parameters('companyAbbreviation')),'j2spdiag', '.blob.core.windows.net/')]"
+                    }
+                }
+            },
+            "tags": {}
+        },
+        {
+            "name": "[concat('rg',toLower(parameters('companyAbbreviation')),'j2spdiag')]",
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2018-02-01",
+            "location": "[resourceGroup().location]",
+            "properties": {},
+            "kind": "Storage",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "tags": {}
+        },
+		
+        {
+            "type": "Microsoft.Sql/servers",
+            "kind": "v12.0",
+            "name": "[concat('sql-',toLower(parameters('companyAbbreviation')),'-j2sp')]",
+            "apiVersion": "2015-05-01-preview",
+            "location": "[resourceGroup().location]",
+            "scale": null,
+            "properties": {
+                "administratorLogin": "[parameters('adminUsername')]",
+                "administratorLoginPassword": "[parameters('adminPassword')]",
+                "version": "12.0"
+            },
+            "dependsOn": []
+        },
+
+        {
+            "type": "Microsoft.Sql/servers/databases",
+            "sku": {
+                "name": "S2",
+                "tier": "Standard"
+            },
+            "kind": "v12.0,user",
+            "name": "[concat('sql-',toLower(parameters('companyAbbreviation')),'-j2sp', '/', 'db-',toLower(parameters('companyAbbreviation')),'-j2sp-prod')]",
+            "apiVersion": "2017-03-01-preview",
+            "location": "[resourceGroup().location]",
+            "scale": null,
+            "properties": {
+                "collation": "SQL_Latin1_General_CP1_CI_AS",
+                "maxSizeBytes": 268435456000,
+                "catalogCollation": "SQL_Latin1_General_CP1_CI_AS",
+                "zoneRedundant": false
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', concat('sql-',toLower(parameters('companyAbbreviation')),'-j2sp'))]"
+            ]
+        }
+	],
+    "outputs": {
+        "adminUsername": {
+            "type": "string",
+            "value": "[parameters('adminUsername')]"
+        }
+    }
+}
